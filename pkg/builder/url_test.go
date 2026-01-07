@@ -4,9 +4,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/mxpv/podsync/pkg/model"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseYoutubeURL_Playlist(t *testing.T) {
@@ -147,5 +146,31 @@ func TestParseVimeoURL_InvalidLink(t *testing.T) {
 
 	link, _ = url.ParseRequestURI("http://www.vimeo.com")
 	_, _, err = parseVimeoURL(link)
+	require.Error(t, err)
+}
+
+func TestParseSpotifyURL_Show(t *testing.T) {
+	link, _ := url.ParseRequestURI("https://open.spotify.com/show/12345")
+	kind, id, err := parseSpotifyURL(link)
+	require.NoError(t, err)
+	require.Equal(t, model.TypePlaylist, kind)
+	require.Equal(t, "12345", id)
+}
+
+func TestParseSpotifyURL_Episode(t *testing.T) {
+	link, _ := url.ParseRequestURI("https://open.spotify.com/episode/9d8a3")
+	kind, id, err := parseSpotifyURL(link)
+	require.NoError(t, err)
+	require.Equal(t, model.TypePlaylist, kind)
+	require.Equal(t, "9d8a3", id)
+}
+
+func TestParseSpotifyURL_Invalid(t *testing.T) {
+	link, _ := url.ParseRequestURI("https://open.spotify.com/")
+	_, _, err := parseSpotifyURL(link)
+	require.Error(t, err)
+
+	link, _ = url.ParseRequestURI("https://open.spotify.com/artist/abcd")
+	_, _, err = parseSpotifyURL(link)
 	require.Error(t, err)
 }

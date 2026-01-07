@@ -10,20 +10,20 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
-
 	"github.com/mxpv/podsync/pkg/builder"
 	"github.com/mxpv/podsync/pkg/db"
 	"github.com/mxpv/podsync/pkg/feed"
 	"github.com/mxpv/podsync/pkg/fs"
 	"github.com/mxpv/podsync/pkg/model"
 	"github.com/mxpv/podsync/pkg/ytdl"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 type Downloader interface {
 	Download(ctx context.Context, feedConfig *feed.Config, episode *model.Episode) (io.ReadCloser, error)
 	PlaylistMetadata(ctx context.Context, url string) (metadata ytdl.PlaylistMetadata, err error)
+	Playlist(ctx context.Context, url string, limit int, sort model.Sorting) (ytdl.Playlist, error)
 }
 
 type TokenList []string
@@ -103,12 +103,17 @@ func (u *Manager) updateFeed(ctx context.Context, feedConfig *feed.Config) error
 	}
 
 	keyProvider, ok := u.keys[info.Provider]
-	if !ok {
+	if !ok && builder.RequiresToken(info.Provider) {
 		return errors.Errorf("key provider %q not loaded", info.Provider)
 	}
 
+	var key string
+	if keyProvider != nil {
+		key = keyProvider.Get()
+	}
+
 	// Create an updater for this feed type
-	provider, err := builder.New(ctx, info.Provider, keyProvider.Get(), u.downloader)
+	provider, err := builder.New(ctx, info.Provider, key, u.downloader)
 	if err != nil {
 		return err
 	}

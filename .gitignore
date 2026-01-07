@@ -37,3 +37,4 @@ db
 config.toml
 
 .claude/settings.local.json
+.gocache/

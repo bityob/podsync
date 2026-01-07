@@ -9,15 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mxpv/podsync/pkg/feed"
+	"github.com/mxpv/podsync/pkg/model"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/mxpv/podsync/pkg/model"
 )
 
 const (
@@ -42,6 +42,28 @@ type PlaylistMetadata struct {
 	ChannelId   string                      `json:"channel_id"`
 	ChannelUrl  string                      `json:"channel_url"`
 	WebpageUrl  string                      `json:"webpage_url"`
+}
+
+type PlaylistEntry struct {
+	ID               string                      `json:"id"`
+	Title            string                      `json:"title"`
+	Description      string                      `json:"description"`
+	Duration         float64                     `json:"duration"`
+	URL              string                      `json:"url"`
+	WebpageURL       string                      `json:"webpage_url"`
+	Thumbnail        string                      `json:"thumbnail"`
+	Thumbnails       []PlaylistMetadataThumbnail `json:"thumbnails"`
+	ReleaseTimestamp int64                       `json:"release_timestamp"`
+	Timestamp        int64                       `json:"timestamp"`
+	UploadDate       string                      `json:"upload_date"`
+	ReleaseDate      string                      `json:"release_date"`
+	Channel          string                      `json:"channel"`
+	ChannelID        string                      `json:"channel_id"`
+}
+
+type Playlist struct {
+	PlaylistMetadata
+	Entries []PlaylistEntry `json:"entries"`
 }
 
 var (
@@ -203,6 +225,44 @@ func (dl *YoutubeDl) PlaylistMetadata(ctx context.Context, url string) (metadata
 	var playlistMetadata PlaylistMetadata
 	json.Unmarshal([]byte(output), &playlistMetadata)
 	return playlistMetadata, nil
+}
+
+func (dl *YoutubeDl) Playlist(ctx context.Context, url string, limit int, _ model.Sorting) (Playlist, error) {
+	log.Info("getting playlist for: ", url)
+
+	args := []string{
+		"-J",            // JSON output with entries
+		"-q",            // quiet mode
+		"--no-warnings", // suppress warnings
+	}
+
+	if limit > 0 {
+		args = append(args, "--playlist-end", strconv.Itoa(limit))
+	}
+
+	args = append(args, url)
+
+	dl.updateLock.Lock()
+	defer dl.updateLock.Unlock()
+
+	output, err := dl.exec(ctx, args...)
+	if err != nil {
+		log.WithError(err).Errorf("youtube-dl error: %s", url)
+
+		if strings.Contains(output, "HTTP Error 429") {
+			return Playlist{}, ErrTooManyRequests
+		}
+
+		log.Error(output)
+		return Playlist{}, errors.New(output)
+	}
+
+	var playlist Playlist
+	if err := json.Unmarshal([]byte(output), &playlist); err != nil {
+		return Playlist{}, errors.Wrap(err, "failed to parse playlist response")
+	}
+
+	return playlist, nil
 }
 
 func (dl *YoutubeDl) Download(ctx context.Context, feedConfig *feed.Config, episode *model.Episode) (r io.ReadCloser, err error) {

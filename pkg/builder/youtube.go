@@ -11,17 +11,17 @@ import (
 
 	"github.com/BrianHicks/finch/duration"
 	"github.com/mxpv/podsync/pkg/feed"
+	"github.com/mxpv/podsync/pkg/model"
+	"github.com/mxpv/podsync/pkg/ytdl"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
-
-	"github.com/mxpv/podsync/pkg/model"
-	"github.com/mxpv/podsync/pkg/ytdl"
 )
 
 type Downloader interface {
 	PlaylistMetadata(ctx context.Context, url string) (metadata ytdl.PlaylistMetadata, err error)
+	Playlist(ctx context.Context, url string, limit int, sort model.Sorting) (ytdl.Playlist, error)
 }
 
 const (

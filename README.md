@@ -19,7 +19,7 @@ any device in podcast client.
 
 ## ✨ Features
 
-- Works with YouTube and Vimeo.
+- Works with YouTube, Vimeo, SoundCloud, Twitch, and Spotify podcasts.
 - Supports feeds configuration: video/audio, high/low quality, max video height, etc.
 - mp3 encoding
 - Update scheduler supports cron expressions
@@ -115,6 +115,8 @@ Podsync supports the following environment variables for configuration and API k
 | `PODSYNC_VIMEO_API_KEY`      | Vimeo API key(s), space-separated for rotation                                            | `key1` or `key1 key2`        |
 | `PODSYNC_SOUNDCLOUD_API_KEY` | SoundCloud API key(s), space-separated for rotation                                       | `soundcloud_key1 soundcloud_key2`             |
 | `PODSYNC_TWITCH_API_KEY`     | Twitch API credentials in the format `CLIENT_ID:CLIENT_SECRET`, space-separated for multi | `id1:secret1 id2:secret2`                     |
+
+Spotify podcast downloads are handled directly by yt-dlp and do not require an API token.
 
 ## 🚀 How to run
 

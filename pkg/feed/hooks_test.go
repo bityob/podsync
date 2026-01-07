@@ -3,6 +3,7 @@ package feed
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,7 +102,13 @@ func TestExecuteHook_CurlWebhook(t *testing.T) {
 	receivedData := ""
 	receivedHeaders := make(map[string]string)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Force IPv4 to avoid environments where IPv6 loopback is unavailable.
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("Skipping webhook test: cannot open local listener: %v", err)
+	}
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Capture the request data for verification
 		body, err := io.ReadAll(r.Body)
 		if err == nil {
@@ -114,6 +121,8 @@ func TestExecuteHook_CurlWebhook(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `{"status": "ok"}`)
 	}))
+	server.Listener = listener
+	server.Start()
 	defer server.Close()
 
 	// Use the local test server URL instead of external httpbin.org
@@ -128,7 +137,7 @@ func TestExecuteHook_CurlWebhook(t *testing.T) {
 		"EPISODE_FILE=test-podcast/episode001.mp3",
 	}
 
-	err := hook.Invoke(env)
+	err = hook.Invoke(env)
 	assert.NoError(t, err, "Curl webhook should execute successfully")
 
 	// Verify that the request was actually made and data was received

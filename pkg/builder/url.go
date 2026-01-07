@@ -4,9 +4,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/mxpv/podsync/pkg/model"
+	"github.com/pkg/errors"
 )
 
 func ParseURL(link string) (model.Info, error) {
@@ -63,6 +62,19 @@ func ParseURL(link string) (model.Info, error) {
 		}
 
 		info.Provider = model.ProviderTwitch
+		info.LinkType = kind
+		info.ItemID = id
+
+		return info, nil
+	}
+
+	if strings.HasSuffix(parsed.Host, "spotify.com") {
+		kind, id, err := parseSpotifyURL(parsed)
+		if err != nil {
+			return model.Info{}, err
+		}
+
+		info.Provider = model.ProviderSpotify
 		info.LinkType = kind
 		info.ItemID = id
 
@@ -240,4 +252,26 @@ func parseTwitchURL(parsed *url.URL) (model.Type, string, error) {
 	}
 
 	return kind, id, nil
+}
+
+func parseSpotifyURL(parsed *url.URL) (model.Type, string, error) {
+	// Spotify podcasts are available under show or episode paths
+	path := parsed.EscapedPath()
+	parts := strings.Split(path, "/")
+
+	if len(parts) < 3 {
+		return "", "", errors.Errorf("invalid spotify link path: %s", path)
+	}
+
+	switch parts[1] {
+	case "show", "episode":
+		id := parts[2]
+		if id == "" {
+			return "", "", errors.New("invalid spotify id")
+		}
+
+		return model.TypePlaylist, id, nil
+	default:
+		return "", "", errors.Errorf("unsupported spotify link type: %s", parts[1])
+	}
 }
