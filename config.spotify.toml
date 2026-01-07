@@ -1,0 +1,12 @@
+[server]
+  port = 8080
+
+  [storage]
+    [storage.local]
+    data_dir = "/tmp/podsync-data"
+
+  [feeds]
+    [feeds.SPOTIFY1]
+    url = "https://open.spotify.com/show/4mPigoSvISbOIZXw874xMW"
+    format = "audio"     # Spotify is audio-only; leave quality defaults (high)
+    page_size = 20       # optional
