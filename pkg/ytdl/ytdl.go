@@ -233,7 +233,7 @@ func (dl *YoutubeDl) Download(ctx context.Context, feedConfig *feed.Config, epis
 	// filePath with YoutubeDl template format
 	filePath := filepath.Join(tmpDir, fmt.Sprintf("%s.%s", baseName, "%(ext)s"))
 
-	args := buildArgs(feedConfig, episode, filePath)
+	args := buildArgs(feedConfig, episode, filePath, dl.streamOutput())
 
 	dl.updateLock.Lock()
 	defer dl.updateLock.Unlock()
@@ -358,7 +358,7 @@ func scanLinesCR(data []byte, atEOF bool) (advance int, token []byte, err error)
 	return 0, nil, nil
 }
 
-func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath string) []string {
+func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath string, verbose bool) []string {
 	var args []string
 
 	switch feedConfig.Format {
@@ -386,6 +386,15 @@ func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath s
 
 	default:
 		args = append(args, "--audio-format", feedConfig.CustomFormat.Extension, "--format", feedConfig.CustomFormat.YouTubeDLFormat)
+	}
+
+	// In verbose mode, force youtube-dl to use newline-separated download
+	// progress and ask ffmpeg post-processors to emit periodic progress on
+	// stderr so the log stream reflects what ffmpeg is doing during audio
+	// extraction / remuxing steps.
+	if verbose {
+		args = append(args, "--newline")
+		args = append(args, "--postprocessor-args", "ffmpeg:-progress pipe:2 -nostats -loglevel info")
 	}
 
 	// Insert additional per-feed youtube-dl arguments

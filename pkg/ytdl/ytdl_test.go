@@ -125,11 +125,27 @@ func TestBuildArgs(t *testing.T) {
 				YouTubeDLArgs: tst.ytdlArgs,
 			}, &model.Episode{
 				VideoURL: tst.videoURL,
-			}, tst.output)
+			}, tst.output, false)
 
 			assert.EqualValues(t, tst.expect, result)
 		})
 	}
+}
+
+func TestBuildArgsVerbose(t *testing.T) {
+	result := buildArgs(&feed.Config{
+		Format:  model.FormatAudio,
+		Quality: model.QualityHigh,
+	}, &model.Episode{
+		VideoURL: "http://url",
+	}, "/tmp/1", true)
+
+	assert.Equal(t, []string{
+		"--extract-audio", "--audio-format", "mp3", "--format", "bestaudio",
+		"--newline",
+		"--postprocessor-args", "ffmpeg:-progress pipe:2 -nostats -loglevel info",
+		"--output", "/tmp/1", "http://url",
+	}, result)
 }
 
 func TestScanLinesCR(t *testing.T) {
