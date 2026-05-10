@@ -177,8 +177,8 @@ self_update = true
 timeout = 15
 # Optional, stream youtube-dl stdout/stderr to the log in real time (line by line,
 # including download progress updates) instead of buffering the output until the
-# command finishes. Also asks ffmpeg post-processors to emit periodic progress
-# (via -progress pipe:2) so audio extraction / remux steps are visible too.
+# command finishes. Also periodically logs the size of the file yt-dlp is writing
+# so ffmpeg post-processing (audio extraction / remux) is visible as file growth.
 # Useful for debugging slow or stuck downloads.
 # Automatically enabled when running with --debug or log.debug = true.
 verbose = false

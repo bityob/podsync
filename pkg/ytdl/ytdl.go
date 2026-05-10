@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -238,7 +239,22 @@ func (dl *YoutubeDl) Download(ctx context.Context, feedConfig *feed.Config, epis
 	dl.updateLock.Lock()
 	defer dl.updateLock.Unlock()
 
+	// When verbose, poll the temp directory for file-size progress. This
+	// compensates for yt-dlp swallowing ffmpeg's stderr during post-
+	// processing (see yt-dlp#1720, #15138): the watcher emits log lines
+	// showing every growing file so you can see the download and any
+	// ffmpeg extract/remux/merge steps making progress.
+	var watcherDone chan struct{}
+	if dl.streamOutput() {
+		watcherDone = make(chan struct{})
+		go watchTempDir(tmpDir, watcherDone)
+	}
+
 	output, err := dl.exec(ctx, args...)
+
+	if watcherDone != nil {
+		close(watcherDone)
+	}
 	if err != nil {
 		log.WithError(err).Errorf("youtube-dl error: %s", filePath)
 
@@ -358,6 +374,100 @@ func scanLinesCR(data []byte, atEOF bool) (advance int, token []byte, err error)
 	return 0, nil, nil
 }
 
+// watchTempDir periodically logs the size of every regular file in dir so
+// that ffmpeg post-processing progress is visible, since yt-dlp does not
+// forward ffmpeg's stderr on success. During multi-stream downloads (e.g.
+// video + audio being fetched in parallel for a merge), all growing files
+// are reported. It returns when done is closed.
+func watchTempDir(dir string, done <-chan struct{}) {
+	const interval = 5 * time.Second
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Per-file size state so we only log files whose size actually changed
+	// since the previous tick, and we can report files that disappeared.
+	prev := map[string]int64{}
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
+
+		cur := listRegularFiles(dir)
+
+		// Report new / grown files in stable (alphabetical) order.
+		names := make([]string, 0, len(cur))
+		for name := range cur {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			size := cur[name]
+			if oldSize, ok := prev[name]; ok && oldSize == size {
+				// Unchanged since last tick; skip to avoid spam.
+				continue
+			}
+			log.Infof("[ffmpeg] %s: %s", name, humanBytes(size))
+		}
+
+		// Report files that were present last tick but are now gone (yt-dlp
+		// deletes intermediates after post-processing).
+		for name := range prev {
+			if _, stillThere := cur[name]; !stillThere {
+				log.Infof("[ffmpeg] %s: removed", name)
+			}
+		}
+
+		prev = cur
+	}
+}
+
+// listRegularFiles returns a map of regular-file names (without dir) to their
+// sizes. Non-regular entries (directories, symlinks, etc.) are skipped. On
+// error, returns nil.
+func listRegularFiles(dir string) map[string]int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	out := make(map[string]int64, len(entries))
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out[e.Name()] = info.Size()
+	}
+	return out
+}
+
+// humanBytes formats a byte count as a short human-readable string (KiB/MiB/GiB).
+func humanBytes(n int64) string {
+	const (
+		kib = 1024
+		mib = 1024 * kib
+		gib = 1024 * mib
+	)
+	switch {
+	case n >= gib:
+		return fmt.Sprintf("%.2f GiB", float64(n)/float64(gib))
+	case n >= mib:
+		return fmt.Sprintf("%.2f MiB", float64(n)/float64(mib))
+	case n >= kib:
+		return fmt.Sprintf("%.2f KiB", float64(n)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
 func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath string, verbose bool) []string {
 	var args []string
 
@@ -389,12 +499,14 @@ func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath s
 	}
 
 	// In verbose mode, force youtube-dl to use newline-separated download
-	// progress and ask ffmpeg post-processors to emit periodic progress on
-	// stderr so the log stream reflects what ffmpeg is doing during audio
-	// extraction / remuxing steps.
+	// progress so each progress tick is an individual log line. Note: we
+	// deliberately do NOT pass ffmpeg `-progress pipe:2` via
+	// `--postprocessor-args` here because yt-dlp captures ffmpeg's stderr
+	// entirely and only logs it on failure (yt-dlp#1720, #15138). Instead,
+	// real-time ffmpeg progress is shown via the temp-dir file-size
+	// watcher in Download().
 	if verbose {
 		args = append(args, "--newline")
-		args = append(args, "--postprocessor-args", "ffmpeg:-progress pipe:2 -nostats -loglevel info")
 	}
 
 	// Insert additional per-feed youtube-dl arguments

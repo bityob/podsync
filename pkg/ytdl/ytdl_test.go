@@ -2,6 +2,8 @@ package ytdl
 
 import (
 	"bufio"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -143,9 +145,46 @@ func TestBuildArgsVerbose(t *testing.T) {
 	assert.Equal(t, []string{
 		"--extract-audio", "--audio-format", "mp3", "--format", "bestaudio",
 		"--newline",
-		"--postprocessor-args", "ffmpeg:-progress pipe:2 -nostats -loglevel info",
 		"--output", "/tmp/1", "http://url",
 	}, result)
+}
+
+func TestHumanBytes(t *testing.T) {
+	tests := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{1024, "1.00 KiB"},
+		{1536, "1.50 KiB"},
+		{1024 * 1024, "1.00 MiB"},
+		{int64(1.5 * 1024 * 1024), "1.50 MiB"},
+		{1024 * 1024 * 1024, "1.00 GiB"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.want, humanBytes(tc.n))
+	}
+}
+
+func TestListRegularFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	assert.Empty(t, listRegularFiles(dir), "empty dir should return empty map")
+
+	want := map[string]int{"small.txt": 10, "big.bin": 1000, "mid.log": 100}
+	for name, size := range want {
+		path := filepath.Join(dir, name)
+		assert.NoError(t, os.WriteFile(path, make([]byte, size), 0o644))
+	}
+
+	assert.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0o755))
+
+	got := listRegularFiles(dir)
+	assert.Len(t, got, 3, "sub-directories should be skipped")
+	for name, size := range want {
+		assert.EqualValues(t, size, got[name], "size mismatch for %q", name)
+	}
 }
 
 func TestScanLinesCR(t *testing.T) {
