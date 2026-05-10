@@ -1,4 +1,28 @@
+.git/
+.github/
 .idea/
+.vscode/
 node_modules/
 vendor/
 bin/
+
+# Docker / CI configs — not needed to build the binary
+Dockerfile
+docker-compose*.yml
+.dockerignore
+.gitignore
+.golangci.yml
+.goreleaser.yml
+
+# Docs and examples
+*.md
+docs/
+config.toml
+config.toml.example
+LICENSE
+
+# Local test / dev artifacts
+*.log
+coverage.*
+db/
+feeds_data/
