@@ -32,7 +32,11 @@ COPY . .
 
 ARG TAG=nightly
 ARG COMMIT=""
-ENV TAG=${TAG} COMMIT=${COMMIT}
+# Empty by default so repeated builds with unchanged source produce an
+# identical binary, letting Go's build cache reuse the final link step.
+# Set explicitly to stamp a release build.
+ARG BUILD_DATE=""
+ENV TAG=${TAG} COMMIT=${COMMIT} BUILD_DATE=${BUILD_DATE}
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \

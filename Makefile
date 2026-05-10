@@ -14,7 +14,11 @@ GOOS ?= $(shell go env GOOS)
 
 TAG ?= $(shell git tag --points-at HEAD)
 COMMIT ?= $(shell git rev-parse --short HEAD)
-DATE := $(shell date)
+# BUILD_DATE is intentionally empty by default so that repeated builds with
+# unchanged source produce bit-identical binaries and the Go build cache can
+# reuse the final link step. Set BUILD_DATE explicitly for release builds:
+#   $ BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" make build
+BUILD_DATE ?=
 
 #
 # Go optimizations
@@ -23,7 +27,7 @@ DATE := $(shell date)
 # -trimpath Remove all file system paths from the compiled binary
 # -tags netgo Use the netgo network stack (Go DNS resolver)
 #
-LDFLAGS := "-s -w -X 'main.version=${TAG}' -X 'main.commit=${COMMIT}' -X 'main.date=${DATE}' -X 'main.arch=${GOARCH}'"
+LDFLAGS := "-s -w -X 'main.version=${TAG}' -X 'main.commit=${COMMIT}' -X 'main.date=${BUILD_DATE}' -X 'main.arch=${GOARCH}'"
 
 .PHONY: build
 build:
