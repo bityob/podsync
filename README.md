@@ -130,6 +130,22 @@ $ make
 $ ./bin/podsync --config config.toml
 ```
 
+### 🗂️ One-time filename migration
+
+If you changed `filename_template` and want to migrate already-downloaded files:
+
+```
+$ ./bin/podsync --config config.toml --migrate-filenames
+```
+
+Preview only (no writes):
+
+```
+$ ./bin/podsync --config config.toml --migrate-filenames --migrate-filenames-dry-run
+```
+
+Note: when `storage.type = "s3"`, only dry-run mode is supported currently. Non-dry-run migration requires readable legacy files and should be run against local storage.
+
 ### 🐛 How to debug
 
 Use the editor [Visual Studio Code](https://code.visualstudio.com/) and install the official [Go](https://marketplace.visualstudio.com/items?itemName=golang.go) extension. Afterwards you can execute "Run & Debug" ▶︎ "Debug Podsync" to debug the application. The required configuration is already prepared (see `.vscode/launch.json`).
@@ -172,3 +188,10 @@ Just push a git tag. CI will do the rest.
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Fork Note
+
+This fork adds the following features while maintaining compatibility with upstream `mxpv/podsync`:
+
+- Configurable `filename_template` for downloaded media and RSS enclosure paths
+- Optional one-time filename migration CLI (`--migrate-filenames`, `--migrate-filenames-dry-run`)

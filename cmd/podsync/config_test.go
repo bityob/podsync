@@ -33,6 +33,7 @@ timeout = 15
   [feeds.XYZ]
   url = "https://youtube.com/watch?v=ygIUF678y40"
   page_size = 48
+  filename_template = "{{pub_date}}_{{title}}_{{id}}"
   update_period = "5h"
   format = "audio"
   quality = "low"
@@ -76,6 +77,7 @@ timeout = 15
 	assert.True(t, ok)
 	assert.Equal(t, "https://youtube.com/watch?v=ygIUF678y40", feed.URL)
 	assert.EqualValues(t, 48, feed.PageSize)
+	assert.EqualValues(t, "{{pub_date}}_{{title}}_{{id}}", feed.FilenameTemplate)
 	assert.EqualValues(t, 5*time.Hour, feed.UpdatePeriod)
 	assert.EqualValues(t, "audio", feed.Format)
 	assert.EqualValues(t, "low", feed.Quality)
@@ -103,6 +105,65 @@ timeout = 15
 
 	assert.True(t, config.Downloader.SelfUpdate)
 	assert.EqualValues(t, 15, config.Downloader.Timeout)
+}
+
+func TestFilenameTemplateValidation(t *testing.T) {
+	const file = `
+[server]
+data_dir = "/data"
+
+[feeds]
+  [feeds.A]
+  url = "https://youtube.com/watch?v=ygIUF678y40"
+  filename_template = "{{bad_token}}_{{id}}"
+`
+	path := setup(t, file)
+	defer os.Remove(path)
+
+	_, err := LoadConfig(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid filename_template")
+}
+
+func TestCustomFormatExtensionValidation(t *testing.T) {
+	t.Run("rejects invalid extension", func(t *testing.T) {
+		const file = `
+[server]
+data_dir = "/data"
+
+[feeds]
+  [feeds.A]
+  url = "https://youtube.com/watch?v=ygIUF678y40"
+  format = "custom"
+  [feeds.A.custom_format]
+  extension = "../mp3"
+`
+		path := setup(t, file)
+		defer os.Remove(path)
+
+		_, err := LoadConfig(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid custom_format.extension")
+	})
+
+	t.Run("accepts normalized extension", func(t *testing.T) {
+		const file = `
+[server]
+data_dir = "/data"
+
+[feeds]
+  [feeds.A]
+  url = "https://youtube.com/watch?v=ygIUF678y40"
+  format = "custom"
+  [feeds.A.custom_format]
+  extension = ".M4A"
+`
+		path := setup(t, file)
+		defer os.Remove(path)
+
+		_, err := LoadConfig(path)
+		assert.NoError(t, err)
+	})
 }
 
 func TestLoadEmptyKeyList(t *testing.T) {
@@ -396,6 +457,45 @@ data_dir = "/data"
 
 		// Should parse multiple keys from environment variable
 		assert.ElementsMatch(t, []string{"key1", "key2", "key3"}, config.Tokens[model.ProviderYoutube])
+	})
+}
+
+func TestNoIndexConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		const file = `
+[server]
+data_dir = "/data"
+
+[feeds]
+  [feeds.A]
+  url = "https://youtube.com/watch?v=ygIUF678y40"
+`
+		path := setup(t, file)
+		defer os.Remove(path)
+
+		config, err := LoadConfig(path)
+		assert.NoError(t, err)
+		require.NotNil(t, config)
+		assert.False(t, config.Server.NoIndex)
+	})
+
+	t.Run("enabled when configured", func(t *testing.T) {
+		const file = `
+[server]
+data_dir = "/data"
+no_index = true
+
+[feeds]
+  [feeds.A]
+  url = "https://youtube.com/watch?v=ygIUF678y40"
+`
+		path := setup(t, file)
+		defer os.Remove(path)
+
+		config, err := LoadConfig(path)
+		assert.NoError(t, err)
+		require.NotNil(t, config)
+		assert.True(t, config.Server.NoIndex)
 	})
 }
 

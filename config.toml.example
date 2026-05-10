@@ -26,6 +26,10 @@ key_file_path = "/var/www/priv.pem"
 # Optional. Enable debug endpoints (/debug/vars) for runtime metrics. Disabled by default for security.
 # Only enable this if you need to debug the application and the endpoint is not publicly accessible.
 debug_endpoints = false
+# Optional. Block search engine indexing by serving robots.txt and adding X-Robots-Tag header.
+no_index = false
+# Optional. Disable directory listings, return 404 for folder access (e.g. GET / or GET /feedID).
+no_listing = false
 
 # Configure where to store the episode data
 [storage]
@@ -111,6 +115,11 @@ vimeo = [ # Multiple keys will be rotated.
   # unexpected behaviour. You should only use this if you know what you are doing, and have read up on youtube-dl's options!
   youtube_dl_args = ["--write-sub", "--embed-subs", "--sub-lang", "en,en-US,en-GB"]
 
+  # Optional filename template for downloaded media and RSS enclosure links (without extension).
+  # Supported tokens: {{id}}, {{title}}, {{pub_date}}, {{feed_id}}
+  # Example output: 2026-02-08_My_Video_Title_dQw4w9WgXcQ.mp4
+  filename_template = "{{pub_date}}_{{title}}_{{id}}"
+
   # When set to true, podcasts indexers such as iTunes or Google Podcasts will not index this podcast
   private_feed = true
 
@@ -127,6 +136,15 @@ vimeo = [ # Multiple keys will be rotated.
   [[feeds.ID1.post_episode_download]]
   command = ["/path/to/your/process-episode.sh"]
   timeout = 120
+
+  # Optional episode download error hooks
+  # Execute commands when an episode download fails (e.g. to notify on cookie expiry)
+  # Available environment variables: FEED_NAME, EPISODE_TITLE, ERROR_MESSAGE
+
+  # Webhook notification example
+  [[feeds.ID1.on_episode_download_error]]
+  command = ["curl", "-X", "POST", "-d", "Download failed for $FEED_NAME: $ERROR_MESSAGE", "https://webhook.example.com/notify"]
+  timeout = 30
 
   # Optional feed customizations
   [feeds.ID1.custom]

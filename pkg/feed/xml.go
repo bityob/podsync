@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,24 @@ import (
 
 // sort.Interface implementation
 type timeSlice []*model.Episode
+
+const defaultFilenameTemplate = "{{id}}"
+
+var (
+	filenameTemplateTokenPattern       = regexp.MustCompile(`{{\s*([a-z_]+)\s*}}`)
+	filenameTemplatePlaceholderPattern = regexp.MustCompile(`{{\s*([^{}]*)\s*}}`)
+	filenameTemplateTokenNamePattern   = regexp.MustCompile(`^[a-z_]+$`)
+	validExtensionPattern              = regexp.MustCompile(`^[a-z0-9]+$`)
+	invalidFilenameCharsPattern        = regexp.MustCompile(`[^A-Za-z0-9._ -]+`)
+	multiWhitespacePattern             = regexp.MustCompile(`\s+`)
+)
+
+var filenameTemplateAllowedTokens = map[string]struct{}{
+	"id":       {},
+	"title":    {},
+	"pub_date": {},
+	"feed_id":  {},
+}
 
 func (p timeSlice) Len() int {
 	return len(p)
@@ -168,19 +187,15 @@ func Build(_ctx context.Context, feed *model.Feed, cfg *Config, hostname string)
 }
 
 func EpisodeName(feedConfig *Config, episode *model.Episode) string {
-	ext := "mp4"
-	if feedConfig.Format == model.FormatAudio {
-		ext = "mp3"
-	}
-	if feedConfig.Format == model.FormatCustom {
-		ext = feedConfig.CustomFormat.Extension
-	}
+	return fmt.Sprintf("%s.%s", EpisodeBaseName(feedConfig, episode), episodeExtension(feedConfig))
+}
 
-	return fmt.Sprintf("%s.%s", episode.ID, ext)
+func LegacyEpisodeName(feedConfig *Config, episode *model.Episode) string {
+	return fmt.Sprintf("%s.%s", episode.ID, episodeExtension(feedConfig))
 }
 
 func EnclosureFromExtension(feedConfig *Config) itunes.EnclosureType {
-	ext := feedConfig.CustomFormat.Extension
+	ext := normalizeExtension(feedConfig.CustomFormat.Extension)
 
 	switch ext {
 	case "m4a":
@@ -200,4 +215,104 @@ func EnclosureFromExtension(feedConfig *Config) itunes.EnclosureType {
 	default:
 		return -1
 	}
+}
+
+func EpisodeBaseName(feedConfig *Config, episode *model.Episode) string {
+	template := strings.TrimSpace(feedConfig.FilenameTemplate)
+	if template == "" {
+		template = defaultFilenameTemplate
+	}
+
+	pubDate := "0000-00-00"
+	if !episode.PubDate.IsZero() {
+		pubDate = episode.PubDate.UTC().Format("2006-01-02")
+	}
+
+	replacements := map[string]string{
+		"id":       episode.ID,
+		"title":    episode.Title,
+		"pub_date": pubDate,
+		"feed_id":  feedConfig.ID,
+	}
+
+	rendered := filenameTemplateTokenPattern.ReplaceAllStringFunc(template, func(token string) string {
+		match := filenameTemplateTokenPattern.FindStringSubmatch(token)
+		if len(match) < 2 {
+			return ""
+		}
+		return replacements[match[1]]
+	})
+
+	name := sanitizeFilename(rendered)
+	if name == "" {
+		name = sanitizeFilename(episode.ID)
+	}
+	if name == "" {
+		name = "episode"
+	}
+	return name
+}
+
+func ValidateFilenameTemplate(template string) error {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		return nil
+	}
+
+	matches := filenameTemplatePlaceholderPattern.FindAllStringSubmatch(template, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		token := strings.TrimSpace(match[1])
+		if !filenameTemplateTokenNamePattern.MatchString(token) {
+			return errors.Errorf("unknown filename template token %q", token)
+		}
+		if _, ok := filenameTemplateAllowedTokens[token]; !ok {
+			return errors.Errorf("unknown filename template token %q", token)
+		}
+	}
+
+	return nil
+}
+
+func ValidateCustomExtension(extension string) error {
+	normalized := normalizeExtension(extension)
+	if normalized == "" {
+		return errors.New("custom format extension cannot be empty")
+	}
+	if !validExtensionPattern.MatchString(normalized) {
+		return errors.Errorf("custom format extension %q must contain only letters and numbers", extension)
+	}
+	return nil
+}
+
+func episodeExtension(feedConfig *Config) string {
+	defaultExt := "mp4"
+	if feedConfig.Format == model.FormatAudio {
+		defaultExt = "mp3"
+	}
+
+	ext := defaultExt
+	if feedConfig.Format == model.FormatCustom {
+		ext = normalizeExtension(feedConfig.CustomFormat.Extension)
+	}
+	if ext == "" || !validExtensionPattern.MatchString(ext) {
+		ext = defaultExt
+	}
+	return ext
+}
+
+func normalizeExtension(extension string) string {
+	normalized := strings.TrimSpace(extension)
+	normalized = strings.TrimPrefix(normalized, ".")
+	return strings.ToLower(normalized)
+}
+
+func sanitizeFilename(value string) string {
+	cleaned := strings.TrimSpace(value)
+	cleaned = invalidFilenameCharsPattern.ReplaceAllString(cleaned, "")
+	cleaned = multiWhitespacePattern.ReplaceAllString(cleaned, "_")
+	cleaned = strings.Trim(cleaned, "._- ")
+	return cleaned
 }
