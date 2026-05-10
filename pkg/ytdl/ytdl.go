@@ -1,6 +1,8 @@
 package ytdl
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -56,11 +58,17 @@ type Config struct {
 	Timeout int `toml:"timeout"`
 	// CustomBinary is a custom path to youtube-dl, this allows using various youtube-dl forks.
 	CustomBinary string `toml:"custom_binary"`
+	// Verbose streams youtube-dl stdout/stderr to the logger in real time
+	// (line-by-line, including progress updates) in addition to capturing it.
+	// Useful for debugging slow/stuck downloads. Real-time streaming is also
+	// automatically enabled when the global log level is debug.
+	Verbose bool `toml:"verbose"`
 }
 
 type YoutubeDl struct {
 	path       string
 	timeout    time.Duration
+	verbose    bool
 	updateLock sync.Mutex // Don't call youtube-dl while self updating
 }
 
@@ -95,6 +103,7 @@ func New(ctx context.Context, cfg Config) (*YoutubeDl, error) {
 	ytdl := &YoutubeDl{
 		path:    path,
 		timeout: timeout,
+		verbose: cfg.Verbose,
 	}
 
 	// Make sure youtube-dl exists
@@ -265,12 +274,95 @@ func (dl *YoutubeDl) exec(ctx context.Context, args ...string) (string, error) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, dl.path, args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(output), errors.Wrap(err, "failed to execute youtube-dl")
+
+	// When verbose mode is enabled (either via config or debug log level),
+	// stream youtube-dl output line-by-line to the logger in real time while
+	// also capturing it for error reporting. Otherwise, fall back to the
+	// simpler CombinedOutput behavior.
+	if !dl.streamOutput() {
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return string(output), errors.Wrap(err, "failed to execute youtube-dl")
+		}
+		return string(output), nil
 	}
 
-	return string(output), nil
+	var buf bytes.Buffer
+	var bufMu sync.Mutex
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create stdout pipe")
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create stderr pipe")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", errors.Wrap(err, "failed to start youtube-dl")
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go streamPipe(stdout, &buf, &bufMu, &wg)
+	go streamPipe(stderr, &buf, &bufMu, &wg)
+	wg.Wait()
+
+	err = cmd.Wait()
+	output := buf.String()
+	if err != nil {
+		return output, errors.Wrap(err, "failed to execute youtube-dl")
+	}
+	return output, nil
+}
+
+// streamOutput reports whether youtube-dl output should be streamed to the
+// logger in real time.
+func (dl *YoutubeDl) streamOutput() bool {
+	return dl.verbose || log.GetLevel() >= log.DebugLevel
+}
+
+// streamPipe reads from r and emits each line (split on both \n and \r so
+// youtube-dl progress updates are visible) to the logger, while also writing
+// raw bytes into buf for error reporting.
+func streamPipe(r io.Reader, buf *bytes.Buffer, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Split(scanLinesCR)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+
+		mu.Lock()
+		buf.Write(line)
+		buf.WriteByte('\n')
+		mu.Unlock()
+
+		trimmed := strings.TrimRight(string(line), "\r\n")
+		if trimmed == "" {
+			continue
+		}
+		log.Infof("[youtube-dl] %s", trimmed)
+	}
+}
+
+// scanLinesCR is a bufio.SplitFunc that splits on both \n and \r so that
+// youtube-dl progress updates (which are separated by carriage returns) are
+// emitted as individual tokens.
+func scanLinesCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		return i + 1, data[0:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func buildArgs(feedConfig *feed.Config, episode *model.Episode, outputFilePath string) []string {

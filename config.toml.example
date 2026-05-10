@@ -157,6 +157,11 @@ vimeo = [ # Multiple keys will be rotated.
 self_update = true
 # Download timeout in minutes.
 timeout = 15
+# Optional, stream youtube-dl stdout/stderr to the log in real time (line by line,
+# including download progress updates) instead of buffering the output until the
+# command finishes. Useful for debugging slow or stuck downloads.
+# Automatically enabled when running with --debug or log.debug = true.
+verbose = false
 
 # Optional log config. If not specified logs to the stdout
 [log]

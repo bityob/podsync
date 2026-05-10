@@ -1,6 +1,8 @@
 package ytdl
 
 import (
+	"bufio"
+	"strings"
 	"testing"
 
 	"github.com/mxpv/podsync/pkg/feed"
@@ -128,4 +130,29 @@ func TestBuildArgs(t *testing.T) {
 			assert.EqualValues(t, tst.expect, result)
 		})
 	}
+}
+
+func TestScanLinesCR(t *testing.T) {
+	input := "[info] starting\n" +
+		"[download]   0.0% of 1MiB at 1MiB/s\r" +
+		"[download]  50.0% of 1MiB at 1MiB/s\r" +
+		"[download] 100.0% of 1MiB at 1MiB/s\n" +
+		"[info] done"
+
+	scanner := bufio.NewScanner(strings.NewReader(input))
+	scanner.Split(scanLinesCR)
+
+	var tokens []string
+	for scanner.Scan() {
+		tokens = append(tokens, scanner.Text())
+	}
+
+	assert.NoError(t, scanner.Err())
+	assert.Equal(t, []string{
+		"[info] starting",
+		"[download]   0.0% of 1MiB at 1MiB/s",
+		"[download]  50.0% of 1MiB at 1MiB/s",
+		"[download] 100.0% of 1MiB at 1MiB/s",
+		"[info] done",
+	}, tokens)
 }
