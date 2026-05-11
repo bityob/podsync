@@ -380,7 +380,7 @@ func scanLinesCR(data []byte, atEOF bool) (advance int, token []byte, err error)
 // video + audio being fetched in parallel for a merge), all growing files
 // are reported. It returns when done is closed.
 func watchTempDir(dir string, done <-chan struct{}) {
-	const interval = 5 * time.Second
+	const interval = 3 * time.Second
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
